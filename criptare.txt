@@ -1,0 +1,155 @@
+CREATE TABLE chei_inregistrare(
+  id_cheie NUMBER(5) PRIMARY KEY,
+  cheie raw(16) NOT NULL,
+  nume_tabel VARCHAR2(30) NOT NULL,
+  id_inregistrare NUMBER(5) NOT NULL);
+
+SELECT * FROM chei_inregistrare;
+
+CREATE SEQUENCE chei_inregistrare_seq
+START WITH 1
+INCREMENT BY 1;
+
+CREATE TABLE chei_tabel(
+  id_cheie NUMBER(5) PRIMARY KEY,
+  cheie raw(16) NOT NULL,
+  nume_tabel VARCHAR2(30) NOT NULL);
+
+CREATE SEQUENCE chei_tabel_seq
+START WITH 1
+INCREMENT BY 1;
+
+SELECT * FROM chei_tabel;
+
+
+CREATE OR REPLACE FUNCTION criptare_aes(valoare VARCHAR2, inregistrare NUMBER, tabel VARCHAR2) RETURN RAW AS
+  cheie_tabel RAW(16);
+  exista_cheie_tabel NUMBER(1);
+  cheie_inregistrare RAW(16);
+  exista_cheie_inregistrare NUMBER(1); 
+  
+  mod_operare PLS_INTEGER;  
+  raw_valoare RAW(100);
+  cheie_xor RAW(100);
+  valoare_cript RAW(100);
+BEGIN
+
+    SELECT COUNT(*) INTO exista_cheie_tabel
+    FROM chei_tabel 
+    WHERE nume_tabel = tabel;
+    
+    IF exista_cheie_tabel = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('Nu exista cheie asociata la nivel de tabel');
+        cheie_tabel := dbms_crypto.randombytes(16);
+        DBMS_OUTPUT.PUT_LINE('Cheie tabel: ' || cheie_tabel);
+        INSERT INTO chei_tabel VALUES (chei_tabel_seq.NEXTVAL, cheie_tabel, tabel);
+    ELSE 
+        SELECT cheie INTO cheie_tabel
+        FROM chei_tabel 
+        WHERE nume_tabel = tabel;
+    END IF;
+    
+    SELECT COUNT(*) INTO exista_cheie_inregistrare
+    FROM chei_inregistrare 
+    WHERE nume_tabel = tabel
+    AND id_inregistrare = inregistrare;
+    
+    IF exista_cheie_inregistrare = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('Nu exista cheie asociata la nivel de inregistrare');
+        cheie_inregistrare := dbms_crypto.randombytes(16);
+        DBMS_OUTPUT.PUT_LINE('Cheie inregistrare: ' || cheie_inregistrare);
+        INSERT INTO chei_inregistrare VALUES (chei_inregistrare_seq.NEXTVAL, cheie_inregistrare, tabel, inregistrare);
+    ELSE 
+        SELECT cheie INTO cheie_inregistrare
+        FROM chei_inregistrare
+        WHERE nume_tabel = tabel
+        AND id_inregistrare = inregistrare;
+    
+    END IF;   
+  
+  mod_operare := dbms_crypto.encrypt_aes128 + dbms_crypto.pad_pkcs5 + dbms_crypto.chain_cbc;
+  raw_valoare := utl_i18n.string_to_raw(valoare, 'AL32UTF8');
+  cheie_xor := UTL_RAW.bit_xor(cheie_tabel, cheie_inregistrare);
+  valoare_cript := dbms_crypto.encrypt(raw_valoare, mod_operare, cheie_xor);
+  
+  COMMIT; 
+  RETURN valoare_cript;
+END;
+/
+
+
+
+
+CREATE OR REPLACE FUNCTION decriptare_aes(valoare RAW, inregistrare NUMBER, tabel VARCHAR2) RETURN VARCHAR2 AS
+  cheie_tabel RAW(16);
+  cheie_inregistrare RAW(16);
+  
+  mod_operare PLS_INTEGER;  
+  cheie_xor RAW(100);
+  valoare_decript_raw RAW(100);
+  valoare_decript VARCHAR2(100);
+BEGIN
+
+    SELECT cheie INTO cheie_tabel
+    FROM chei_tabel 
+    WHERE nume_tabel = tabel;
+
+    SELECT cheie INTO cheie_inregistrare
+    FROM chei_inregistrare
+    WHERE nume_tabel = tabel
+    AND id_inregistrare = inregistrare;
+    
+  mod_operare := dbms_crypto.encrypt_aes128 + dbms_crypto.pad_pkcs5 + dbms_crypto.chain_cbc;
+  cheie_xor := UTL_RAW.bit_xor(cheie_tabel, cheie_inregistrare);
+  valoare_decript_raw := dbms_crypto.decrypt (valoare, mod_operare, cheie_xor);
+  valoare_decript := utl_i18n.raw_to_char(valoare_decript_raw, 'AL32UTF8');
+  RETURN valoare_decript;
+END;
+/
+
+
+SET SERVEROUTPUT ON;
+-- testam functiile de criptare/decriptare
+
+SELECT * FROM chei_tabel;
+SELECT * FROM chei_inregistrare;
+
+variable val_decript varchar2(100);
+execute :val_decript := decriptare_aes(criptare_aes('test', 1, 'test'), 1, 'test');
+print val_decript;
+
+  
+CREATE OR REPLACE FUNCTION hash_parola(parola VARCHAR2) RETURN varchar2 AS
+   md5 raw(16); -- MD5 este 128 = 16 * 8 bits
+BEGIN
+   md5 := DBMS_CRYPTO.HASH(
+            utl_i18n.string_to_raw(parola, 'AL32UTF8'),
+            DBMS_CRYPTO.HASH_MD5
+          );
+
+   RETURN md5;
+END;
+/
+
+-- Testare functie
+variable hash_ varchar2(100);
+execute :hash_ := hash_parola('vrebengiuc');
+print hash_;
+
+
+-- Testare functii pe tabela ACTORI
+
+CREATE OR REPLACE PROCEDURE test_decriptare AS
+val_decript VARCHAR2(100);
+val_cript RAW(100);
+BEGIN
+    SELECT email INTO val_cript
+    FROM actori
+    WHERE actor_id = 1;
+    DBMS_OUTPUT.PUT_LINE(' Valoarea criptata ' || val_cript);
+    val_decript  := decriptare_aes(val_cript, 1, 'actori');
+    DBMS_OUTPUT.PUT_LINE('Valoarea decriptata este ' || val_decript);    
+END;
+/
+
+EXECUTE test_decriptare;

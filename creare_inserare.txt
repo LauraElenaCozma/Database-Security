@@ -1,0 +1,301 @@
+-- Creare si inserare in tabele
+-- Functiile de criptare si decriptare au fost definite anterior si se pot regasi in fisierul de criptare
+
+-- ACTORI
+CREATE TABLE actori
+    (actor_id NUMBER(5) PRIMARY KEY,
+     username VARCHAR2(20) NOT NULL,
+     parola RAW(100) NOT NULL,
+     prenume VARCHAR2(20) NOT NULL,
+     nume VARCHAR2(20) NOT NULL,
+     email RAW(100) NOT NULL UNIQUE,
+     numar_telefon RAW(100) NOT NULL UNIQUE,
+     locul_nasterii VARCHAR2(20),
+     data_nasterii DATE,
+     biografie VARCHAR2(500));
+     
+CREATE SEQUENCE actori_seq 
+START WITH 1
+INCREMENT BY 1;
+
+SELECT * FROM actori;
+
+
+CREATE OR REPLACE PROCEDURE insert_actori(username VARCHAR2, parola VARCHAR2, prenume VARCHAR2, nume VARCHAR2, email VARCHAR2, numar_telefon VARCHAR2, locul_nasterii VARCHAR2, data_nasterii DATE, biografie VARCHAR2) AS
+id_ NUMBER(5);
+parola_hash RAW(100);
+email_cript RAW(100);
+telefon_cript RAW(100);
+BEGIN
+    id_ := actori_seq.NEXTVAL;
+    parola_hash := hash_parola(parola);
+    email_cript := criptare_aes(email, id_, 'actori');
+    telefon_cript := criptare_aes(numar_telefon, id_, 'actori');
+    
+    INSERT INTO actori (actor_id, username, parola, prenume, nume, email, numar_telefon, locul_nasterii, data_nasterii, biografie)
+    VALUES (id_, username, parola_hash, prenume, nume, email_cript, telefon_cript, locul_nasterii, data_nasterii, biografie);
+    COMMIT;
+END;
+/
+
+
+EXECUTE insert_actori('vrebengiuc', 'vrebengiuc', 'Victor', 'Rebengiuc', 'rebengiuc@gmail.com', '0728119013', 'Bucuresti', TO_DATE('10/02/1933', 'DD/MM/YYYY'), 'Din 1957, a fost membru al Teatrului Bulandra, jucând în peste 200 de roluri numai pe aceast? scen?. Dup? performan?a sa în P?durea spânzura?ilor în regia lui Liviu Ciulei, Rebengiuc a devenit o figur? major? în cinematografia româneasc? ?i a devenit cunoscut mai ales pentru apari?ia sa în 1986 în Morome?ii lui Stere Gulea.');
+EXECUTE insert_actori('opellea', 'opellea', 'Oana', 'Pellea', 'pellea@gmail.com', '0728814491', 'Bucuresti', TO_DATE('29/01/1962', 'DD/MM/YYYY'), 'Majestatea Sa Regele Mihai I al României i-a acordat Oanei Pellea decora?ia Crucea Casei Regale a României la 25 octombrie 2012. Academia Român? i-a acordat Oanei Pellea premiul Aristizza Romanescu pentru cariera teatral? ?i cinematografic? la 16 decembrie 2010.');
+EXECUTE insert_actori('mmorgenstern', 'mmorgenstern', 'Maia', 'Morgenstern', 'morgenstern@yahoo.com', '0734491191','Bucuresti', TO_DATE('01/05/1962', 'DD/MM/YYYY'), 'Emilia-Maia-Ninel Morgenstern s-a n?scut în Bucure?ti într-o familie evreiasc? de matematicieni Usher ?i Sara Morgenstern. A studiat la Academia de Teatru ?i Film între 1981 ?i 1985, iar apoi a jucat la Teatrul Tineretului din Piatra Neam? pân? în 1988. ');
+EXECUTE insert_actori('cbleont', 'cbleont', 'Claudiu', 'Bleont', 'bleont@yahoo.com', '0718112749', 'Bucuresti', TO_DATE('17/08/1959', 'DD/MM/YYYY'), 'Claudiu Bleon? s-a n?scut pe 27 august 1959 în Bucure?ti. A absolvit Liceul German Goethe din Bucure?ti (1979), dup? care a urmat Institutul de art? Teatral? ?i Cinematografic? „Ion Luca Caragiale” din Bucure?ti, clasa profesor Grigore Gon?a (1979 - 1983).');
+EXECUTE insert_actori('mmanole', 'mmanole', 'Marius', 'Manole', 'manole@gmail.com', '0745518172', 'Iasi', TO_DATE('04/10/1978', 'DD/MM/YYYY'), 'Marius Manole a absolvit în 2001 Universitatea de Arte „George Enescu” din Ia?i, sec?ia Actorie, la clasa profesor Emil Co?eriu ?i Cornelia Gheorghe. Între 2002 - 2003, a urmat cursurile Sec?iei de Coregrafie de la Universitatea Na?ional? de Art? Teatral? ?i Cinematografic? „Ion Luca Caragiale” din Bucure?ti.');
+EXECUTE insert_actori('mmarinescu', 'mmarinescu', 'Medeea', 'Marinescu', 'marin11@gmail.com', '0718442812', 'Iasi', TO_DATE('27/05/1974', 'DD/MM/YYYY'), 'Medeea Marinescu a debutat la vârsta de doar 3 ani în filmul Iarna bobocilor (1977) al regizorului Mircea Moldovan, dar a devenit bine cunoscut? ?i recunoscut? dup? interpretarea rolului principal, Mirabela, din filmul fantezie Maria Mirabela (1981) al lui Ion Popescu Gopo ?i al Nataliei Bodiul.');
+
+
+-- PIESE TEATRU
+
+CREATE TABLE piese_teatru
+    (piesa_id NUMBER(5) PRIMARY KEY,
+     titlu VARCHAR2(50) NOT NULL,
+     autor VARCHAR2(20),
+     regizor VARCHAR2(20),
+     durata NUMBER(3) NOT NULL,
+     gen VARCHAR2(20) NOT NULL);
+
+CREATE SEQUENCE piese_teatru_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO piese_teatru(piesa_id, titlu, autor, regizor, durata, gen) 
+VALUES (piese_teatru_seq.NEXTVAL, 'Padurea spanzuratilor', 'Liviu Rebreanu', 'Radu Afrim', 190, 'drama');
+INSERT INTO piese_teatru(piesa_id, titlu, autor, regizor, durata, gen) 
+VALUES (piese_teatru_seq.NEXTVAL, 'Trei surori', 'Anton Cehov', 'Radu Afrim', 180, 'drama');
+INSERT INTO piese_teatru(piesa_id, titlu, autor, regizor, durata, gen) 
+VALUES (piese_teatru_seq.NEXTVAL, 'Doua loturi', 'I.L. Caragiale', 'Alexandru Dabija', 60, 'comedie');
+INSERT INTO piese_teatru(piesa_id, titlu, autor, regizor, durata, gen) 
+VALUES (piese_teatru_seq.NEXTVAL, 'Toti fiii mei', 'Arthur Miller', 'Ion Caramitru', 160, 'drama');
+INSERT INTO piese_teatru(piesa_id, titlu, regizor, durata, gen) 
+VALUES (piese_teatru_seq.NEXTVAL, 'Jaful', 'Vlad Massaci', 130, 'drama');
+
+SELECT * FROM piese_teatru;
+
+-- JOACA
+
+CREATE TABLE joaca
+(piesa_id NUMBER(5) REFERENCES piese_teatru(piesa_id) ON DELETE CASCADE,
+     actor_id NUMBER(5) REFERENCES actori(actor_id) ON DELETE CASCADE,
+     CONSTRAINT joaca_pk PRIMARY KEY(piesa_id, actor_id));
+     
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(1, 2);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(1, 3);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(1, 4);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(2, 2);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(2, 3);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(2, 5);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(4, 2);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(4, 4);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(4, 5);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(4, 6);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(3, 6);
+INSERT INTO joaca (piesa_id, actor_id)
+VALUES(3, 1);
+
+SELECT * FROM joaca;
+
+
+-- TEATRU
+
+CREATE TABLE teatru
+    (teatru_id NUMBER(5) PRIMARY KEY,
+    nume VARCHAR2(30) NOT NULL,
+    oras VARCHAR2(20) NOT NULL);
+    
+CREATE SEQUENCE teatru_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO teatru
+VALUES(teatru_seq.NEXTVAL, 'Teatrul Nottara', 'Bucuresti');
+INSERT INTO teatru
+VALUES(teatru_seq.NEXTVAL, 'Teatrul National Bucuresti', 'Bucuresti');
+INSERT INTO teatru
+VALUES(teatru_seq.NEXTVAL, 'Teatrul Odeon', 'Bucuresti');
+INSERT INTO teatru
+VALUES(teatru_seq.NEXTVAL, 'Teatrul National', 'Iasi');
+INSERT INTO teatru
+VALUES(teatru_seq.NEXTVAL, 'Teatrul National Cluj-Napoca', 'Cluj-Napoca');
+
+SELECT * FROM teatru;
+
+-- SALI
+
+CREATE TABLE sali
+    (sala_id NUMBER(5) PRIMARY KEY,
+     nume VARCHAR2(30) NOT NULL,
+     capacitate NUMBER(4) NOT NULL CHECK(capacitate > 10),
+     teatru_id NUMBER(5) REFERENCES teatru(teatru_id) ON DELETE CASCADE);
+
+
+CREATE SEQUENCE sali_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO sali(sala_id, nume, capacitate, teatru_id)
+VALUES(sali_seq.NEXTVAL, 'Sala Pictura', 150, 2);
+INSERT INTO sali(sala_id, nume, capacitate, teatru_id)
+VALUES(sali_seq.NEXTVAL, 'Ion Caramitru', 940, 2);
+INSERT INTO sali(sala_id, nume, capacitate, teatru_id)
+VALUES(sali_seq.NEXTVAL, 'Sala Mica', 20, 2);
+INSERT INTO sali(sala_id, nume, capacitate, teatru_id)
+VALUES(sali_seq.NEXTVAL, 'Sala Mica', 40, 3);
+INSERT INTO sali(sala_id, nume, capacitate, teatru_id)
+VALUES(sali_seq.NEXTVAL, 'Sala Mica', 50, 4);
+
+SELECT * FROM sali;
+
+-- REPREZENTATII
+
+CREATE TABLE reprezentatii
+    (reprezentatie_id NUMBER(5) PRIMARY KEY,
+     piesa_id NUMBER(5) REFERENCES piese_teatru(piesa_id) ON DELETE CASCADE,
+     sala_id NUMBER(5) REFERENCES sali(sala_id) ON DELETE CASCADE,
+     data_reprezentatie DATE NOT NULL,
+     pret NUMBER(4, 1) NOT NULL,
+     ora VARCHAR2(5) NOT NULL,
+     status VARCHAR2(20)); 
+
+CREATE SEQUENCE reprezentatii_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora, status)
+VALUES(reprezentatii_seq.NEXTVAL, 1, 1, TO_DATE('30/01/2022', 'DD/MM/YYYY'), 60, '20:00', 'ACTIV');
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora, status)
+VALUES(reprezentatii_seq.NEXTVAL, 1, 1, TO_DATE('15/02/2022', 'DD/MM/YYYY'), 60, '20:00', 'ANULAT');
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora, status)
+VALUES(reprezentatii_seq.NEXTVAL, 4, 2, TO_DATE('04/02/2022', 'DD/MM/YYYY'), 90, '19:30', 'ACTIV');
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora)
+VALUES(reprezentatii_seq.NEXTVAL, 4, 2, TO_DATE('04/12/2021', 'DD/MM/YYYY'), 80, '20:30');
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora, status)
+VALUES(reprezentatii_seq.NEXTVAL, 2, 2, TO_DATE('20/10/2021', 'DD/MM/YYYY'), 120, '19:00', 'ACTIV');
+INSERT INTO reprezentatii(reprezentatie_id, piesa_id, sala_id, data_reprezentatie, pret, ora)
+VALUES(reprezentatii_seq.NEXTVAL, 2, 2, TO_DATE('20/12/2021', 'DD/MM/YYYY'), 120, '19:00');
+
+SELECT * FROM reprezentatii;
+
+-- SPECTATORI
+
+CREATE TABLE spectatori
+    (spectator_id NUMBER(5) PRIMARY KEY,
+     username VARCHAR2(20) NOT NULL,
+     parola RAW(100) NOT NULL,
+     prenume VARCHAR2(20) NOT NULL,
+     nume VARCHAR2(20) NOT NULL,
+     email RAW(100) NOT NULL UNIQUE,
+     numar_telefon RAW(100) UNIQUE);
+     
+CREATE SEQUENCE spectatori_seq 
+START WITH 1
+INCREMENT BY 1;
+
+CREATE OR REPLACE PROCEDURE insert_spectatori(username VARCHAR2, parola VARCHAR2, prenume VARCHAR2, nume VARCHAR2, email VARCHAR2, numar_telefon VARCHAR2) AS
+id_ NUMBER(5);
+parola_hash RAW(100);
+email_cript RAW(100);
+telefon_cript RAW(100);
+BEGIN
+    id_ := spectatori_seq.NEXTVAL;
+    parola_hash := hash_parola(parola);
+    email_cript := criptare_aes(email, id_, 'spectatori');
+    telefon_cript := criptare_aes(numar_telefon, id_, 'spectatori');
+    
+    INSERT INTO spectatori(spectator_id, username, parola, prenume, nume, email, numar_telefon)
+    VALUES (id_, username, parola_hash, prenume, nume, email_cript, telefon_cript);
+    COMMIT;
+END;
+/
+
+EXECUTE insert_spectatori('ipoop', 'ipoop', 'Ioana', 'Pop', 'ioanapop@gmail.com', '0721174482');
+EXECUTE insert_spectatori('dediu', 'dediu', 'Marius', 'Dediu', 'marius@gmail.com', '0787123832');
+EXECUTE insert_spectatori('avramescu', 'avramescu', 'Victor', 'Avram', 'avram_vic@gmail.com', '0761124428');
+EXECUTE insert_spectatori('epitaru', 'epitaru', 'Erika', 'Pitaru', 'pit_erika@gmail.com', '0719921004');
+EXECUTE insert_spectatori('alexpopa', 'alexpopa', 'Alexandra', 'Popa', 'alex_pop@gmail.com', '0721193392');
+
+SELECT * FROM spectatori;
+
+-- BILETE
+
+CREATE TABLE bilete
+    (reprezentatie_id NUMBER(5) REFERENCES reprezentatii(reprezentatie_id) ON DELETE CASCADE,
+     spectator_id NUMBER(5) REFERENCES spectatori(spectator_id) ON DELETE CASCADE,
+     num_locuri NUMBER(2) NOT NULL CHECK(num_locuri > 0));
+     
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(1, 3, 3);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(1, 4, 5);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(3, 2, 4);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(4, 1, 1);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(4, 2, 2);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(6, 1, 4);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(5, 2, 2);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(6, 5, 9);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(5, 1, 1);
+INSERT INTO bilete(reprezentatie_id, spectator_id, num_locuri)
+VALUES(5, 5, 2);
+
+SELECT * FROM bilete;
+
+-- RECENZII
+
+CREATE TABLE recenzii
+    (recenzie_id NUMBER(5) PRIMARY KEY,
+     piesa_id NUMBER(5) REFERENCES piese_teatru(piesa_id) ON DELETE CASCADE,
+     spectator_id NUMBER(5) REFERENCES spectatori(spectator_id) ON DELETE CASCADE,
+     mesaj VARCHAR2(300) NOT NULL,
+     nota NUMBER(2) NOT NULL,
+     data_recenzie DATE NOT NULL);
+
+     
+CREATE SEQUENCE recenzii_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO recenzii
+VALUES (recenzii_seq.NEXTVAL, 1, 1, 'O piesa excelenta', 10, TO_DATE('10/01/2023', 'DD/MM/YYYY'));
+
+SELECT * FROM recenzii;
+
+
+-- RASPUNS RECENZII
+
+CREATE TABLE raspuns_recenzii
+    (raspuns_id NUMBER(5) PRIMARY KEY,
+     recenzie_id NUMBER(5) REFERENCES recenzii(recenzie_id) ON DELETE CASCADE,
+     actor_id NUMBER(5) REFERENCES actori(actor_id) ON DELETE CASCADE,
+     mesaj VARCHAR2(300) NOT NULL,
+     data_recenzie DATE NOT NULL);
+    
+CREATE SEQUENCE raspuns_seq 
+START WITH 1
+INCREMENT BY 1;
+
+INSERT INTO raspuns_recenzii
+VALUES (raspuns_seq.NEXTVAL, 1, 2, 'Va recomandam si piesa O noapte furtunoasa, in aceeasi distributie', TO_DATE('11/01/2023', 'DD/MM/YYYY'));
+INSERT INTO raspuns_recenzii
+VALUES (raspuns_seq.NEXTVAL, 1, 1, 'MULTUMIM', TO_DATE('12/01/2023', 'DD/MM/YYYY'));
+
+SELECT * FROM raspuns_recenzii;

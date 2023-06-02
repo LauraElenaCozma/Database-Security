@@ -1,0 +1,476 @@
+-- sys as sysdba 
+
+-- oferim utilizatorului admin drept de a crea tabelele in schema sa si in schemele altor utilizatori
+GRANT CREATE SESSION TO TEATRU_ADMIN;
+GRANT CREATE TABLE TO TEATRU_ADMIN;
+GRANT CREATE SEQUENCE TO TEATRU_ADMIN;
+GRANT CREATE ANY TABLE TO TEATRU_ADMIN;
+GRANT CREATE ANY INDEX TO TEATRU_ADMIN;
+GRANT CREATE PROCEDURE TO TEATRU_ADMIN;
+GRANT EXECUTE ON dbms_crypto TO TEATRU_ADMIN;
+
+-- oferim privilegii pentru crearea view-ului
+GRANT CREATE VIEW TO TEATRU_ADMIN;
+SELECT * FROM session_privs WHERE privilege LIKE '%VIEW%';
+GRANT CREATE ROLE TO TEATRU_ADMIN;
+
+SELECT * FROM DBA_role_privs WHERE grantee like '%TEATRU%' AND granted_role LIKE '%VIZUALIZARE_ACTORI%';
+SELECT * FROM DBA_role_privs WHERE grantee like '%TEATRU%' AND lower(granted_role) LIKE '%vizualizare_tabele_public%';
+
+-- oferim privilegii pentru creare trigger
+GRANT CREATE TRIGGER TO TEATRU_ADMIN;
+
+
+
+-- teatru_admin
+--- PRIVILEGII SI ROLURI ---
+
+SELECT * FROM session_privs;
+SELECT * FROM session_roles;
+
+
+-- Creare vizualizare actori pentru privilegiu de citire pe actori
+SELECT * FROM actori;
+CREATE OR REPLACE VIEW view_actori AS SELECT actor_id, prenume, nume, locul_nasterii, data_nasterii, biografie FROM actori;
+SELECT * FROM view_actori;
+-- Cream vizualizare si oferim utilizatorilor drepturi de read pe vizualizare
+CREATE ROLE vizualizare_actori;
+GRANT SELECT ON view_actori to vizualizare_actori;
+GRANT vizualizare_actori TO TEATRU_CONSULTANT1;
+GRANT vizualizare_actori TO TEATRU_CONSULTANT2;
+GRANT vizualizare_actori TO TEATRU_CONSULTANT3;
+GRANT vizualizare_actori TO TEATRU_ACTOR1;
+GRANT vizualizare_actori TO TEATRU_ACTOR2;
+GRANT vizualizare_actori TO TEATRU_ACTOR3;
+GRANT vizualizare_actori TO TEATRU_SPECTATOR1;
+GRANT vizualizare_actori TO TEATRU_SPECTATOR2;
+GRANT vizualizare_actori TO TEATRU_SPECTATOR3;
+GRANT vizualizare_actori TO TEATRU_GUEST;
+
+
+-- consultant 1
+SELECT * FROM teatru_admin.view_actori; -- succes
+
+-- actor 1
+SELECT * FROM teatru_admin.view_actori;
+
+
+-- Creare privilegii pentru consultantii artistici
+CREATE ROLE rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON piese_teatru TO rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON joaca TO rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON teatru TO rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON sali TO rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON reprezentatii TO rol_consultant;
+GRANT SELECT, UPDATE, DELETE, INSERT ON view_actori TO rol_consultant;
+GRANT SELECT ON bilete TO rol_consultant;
+GRANT SELECT ON recenzii TO rol_consultant;
+GRANT SELECT ON raspuns_recenzii TO rol_consultant;
+
+GRANT rol_consultant TO TEATRU_CONSULTANT1;
+GRANT rol_consultant TO TEATRU_CONSULTANT2;
+GRANT rol_consultant TO TEATRU_CONSULTANT3;
+
+
+-- in consultant 1
+
+SELECT * FROM teatru_admin.piese_teatru;
+
+UPDATE teatru_admin.piese_teatru
+SET autor = 'Arthur Miller'
+WHERE piesa_id = 5;
+
+SELECT * FROM teatru_admin.reprezentatii;
+
+
+-- in consultant 2
+SELECT * FROM teatru_admin.recenzii;  -- ok
+
+UPDATE teatru_admin.recenzii  --esec
+SET mesaj = 'Excelent!!'
+WHERE recenzie_id = 1;
+
+
+
+
+--- in teatru admin
+-- Cream drept se SELECT pe PIESE, JOACA, TEATRU, SALI, REPREZENTATII, RECENZII, RASPUNS_RECENZII pentru actori, spectatori si guest
+CREATE ROLE vizualizare_tabele_public; 
+GRANT SELECT ON piese_teatru TO vizualizare_tabele_public;
+GRANT SELECT ON joaca TO vizualizare_tabele_public;
+GRANT SELECT ON teatru TO vizualizare_tabele_public;
+GRANT SELECT ON sali TO vizualizare_tabele_public;
+GRANT SELECT ON reprezentatii TO vizualizare_tabele_public;
+GRANT SELECT ON recenzii TO vizualizare_tabele_public;
+GRANT SELECT ON raspuns_recenzii TO vizualizare_tabele_public;
+
+GRANT vizualizare_tabele_public TO teatru_guest;
+GRANT vizualizare_tabele_public TO TEATRU_ACTOR1;
+GRANT vizualizare_tabele_public TO TEATRU_ACTOR2;
+GRANT vizualizare_tabele_public TO TEATRU_ACTOR3;
+GRANT vizualizare_tabele_public TO TEATRU_SPECTATOR1;
+GRANT vizualizare_tabele_public TO TEATRU_SPECTATOR2;
+GRANT vizualizare_tabele_public TO TEATRU_SPECTATOR3;
+
+-- guest
+SELECT * FROM teatru_admin.reprezentatii;
+
+
+-- teatru admin
+-- permisiuni spectatori
+-- Cream vizualizari cu biletele pentru fiecare dintre cei 3 spectatori
+SELECT * FROM bilete;
+
+CREATE OR REPLACE VIEW view_bilete1 AS SELECT * FROM bilete WHERE spectator_id = 1;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_bilete1 TO TEATRU_SPECTATOR1;
+SELECT * FROM view_bilete1;
+SELECT * FROM bilete;
+
+CREATE OR REPLACE TRIGGER trigger_bilete1 
+INSTEAD OF INSERT OR UPDATE ON view_bilete1
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 1 THEN
+        proc_insert_audit_teatru_erori('Poti insera bilete/actualiza campul spectator_id numai pentru spectator 1');
+        RAISE_APPLICATION_ERROR(-20001, 'Poti insera bilete/actualiza campul spectator_id numai pentru spectator 1');
+    ELSE 
+        INSERT INTO bilete VALUES(:NEW.reprezentatie_id, :NEW.spectator_id, :NEW.num_locuri); 
+        COMMIT;
+    END IF;
+END;
+/
+
+
+CREATE OR REPLACE VIEW view_bilete2 AS SELECT * FROM bilete WHERE spectator_id = 2;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_bilete2 TO TEATRU_SPECTATOR2;
+SELECT * FROM view_bilete2;
+
+CREATE OR REPLACE TRIGGER trigger_bilete2
+INSTEAD OF INSERT OR UPDATE ON view_bilete2
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 2 THEN
+        proc_insert_audit_teatru_erori('Poti insera bilete/actualiza campul spectator_id numai pentru spectator 2');
+        RAISE_APPLICATION_ERROR(-20002, 'Poti insera bilete/actualiza campul spectator_id numai pentru spectator 2');
+    ELSE 
+        INSERT INTO bilete VALUES(:NEW.reprezentatie_id, :NEW.spectator_id, :NEW.num_locuri); 
+         COMMIT;
+    END IF;
+END;
+/
+
+CREATE OR REPLACE VIEW view_bilete3 AS SELECT * FROM bilete WHERE spectator_id = 3;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_bilete3 TO TEATRU_SPECTATOR3;
+SELECT * FROM view_bilete3;
+
+CREATE OR REPLACE TRIGGER trigger_bilete3
+INSTEAD OF INSERT OR UPDATE ON view_bilete3
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 3 THEN
+        proc_insert_audit_teatru_erori('Poti insera bilete/actualiza campul spectator_id numai pentru spectator 3');
+        RAISE_APPLICATION_ERROR(-20003, 'Poti insera bilete/actualiza campul spectator_id numai pentru spectator 3');
+    ELSE 
+        INSERT INTO bilete VALUES(:NEW.reprezentatie_id, :NEW.spectator_id, :NEW.num_locuri); 
+         COMMIT;
+    END IF;
+END;
+/
+
+
+-- in spectator 1
+INSERT INTO teatru_admin.view_bilete1 VALUES(6, 1, 99); --ok
+
+
+INSERT INTO teatru_admin.view_bilete1 VALUES(6, 2, 99); -- EROARE; trigger
+
+UPDATE teatru_admin.view_bilete1 
+SET spectator_id = 2
+WHERE reprezentatie_id = 4 AND num_locuri = 1; -- EROARE; trigger
+
+
+-- in teatru actor
+--- Cream vizualizari separate pentru fiecare spectator pentru recenzii
+SELECT * FROM recenzii;
+CREATE OR REPLACE VIEW view_recenzii1 AS SELECT * FROM recenzii WHERE spectator_id = 1;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_recenzii1 TO TEATRU_SPECTATOR1;
+SELECT * FROM view_recenzii1;
+GRANT SELECT ON recenzii_seq TO TEATRU_SPECTATOR1;
+
+CREATE OR REPLACE TRIGGER trigger_recenzii1
+INSTEAD OF INSERT OR UPDATE ON view_recenzii1
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 1 THEN
+        proc_insert_audit_teatru_erori('Poti insera recenzii/actualiza campul spectator_id numai pentru spectatorul 1');
+        RAISE_APPLICATION_ERROR(-20011, 'Poti insera recenzii/actualiza campul spectator_id numai pentru spectatorul 1');
+    ELSIF (INSERTING) THEN
+        INSERT INTO recenzii VALUES(:NEW.recenzie_id, :NEW.piesa_id, :NEW.spectator_id, :NEW.mesaj, :NEW.nota, :NEW.data_recenzie); 
+        COMMIT;
+    ELSE
+        UPDATE recenzii
+        SET piesa_id = :NEW.piesa_id, spectator_id =  :NEW.spectator_id,
+        mesaj = :NEW.mesaj, nota = :NEW.nota, data_recenzie = :NEW.data_recenzie
+        WHERE recenzie_id = :NEW.recenzie_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+
+CREATE OR REPLACE VIEW view_recenzii2 AS SELECT * FROM recenzii WHERE spectator_id = 2;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_recenzii2 TO TEATRU_SPECTATOR2;
+SELECT * FROM view_recenzii2;
+GRANT SELECT ON recenzii_seq TO TEATRU_SPECTATOR2;
+
+CREATE OR REPLACE TRIGGER trigger_recenzii2
+INSTEAD OF INSERT OR UPDATE ON view_recenzii2
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 2 THEN
+        proc_insert_audit_teatru_erori('Poti insera recenzii/actualiza campul spectator_id numai pentru spectator 2');
+        RAISE_APPLICATION_ERROR(-20012, 'Poti insera recenzii/actualiza campul spectator_id numai pentru spectatorul 2');
+    ELSIF (INSERTING) THEN
+        INSERT INTO recenzii VALUES(:NEW.recenzie_id, :NEW.piesa_id, :NEW.spectator_id, :NEW.mesaj, :NEW.nota, :NEW.data_recenzie); 
+        COMMIT;
+    ELSE
+        UPDATE recenzii
+        SET piesa_id = :NEW.piesa_id, spectator_id =  :NEW.spectator_id,
+        mesaj = :NEW.mesaj, nota = :NEW.nota, data_recenzie = :NEW.data_recenzie
+        WHERE recenzie_id = :NEW.recenzie_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+SELECT * FROM recenzii;
+CREATE OR REPLACE VIEW view_recenzii3 AS SELECT * FROM recenzii WHERE spectator_id = 3;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_recenzii3 TO TEATRU_SPECTATOR3;
+SELECT * FROM view_recenzii3;
+GRANT SELECT ON recenzii_seq TO TEATRU_SPECTATOR3;
+
+CREATE OR REPLACE TRIGGER trigger_recenzii3
+INSTEAD OF INSERT OR UPDATE ON view_recenzii3
+FOR EACH ROW 
+BEGIN
+    IF :NEW.spectator_id != 3 THEN
+        proc_insert_audit_teatru_erori( 'Poti insera recenzii/actualiza campul spectator_id numai pentru spectatorul 3');
+        RAISE_APPLICATION_ERROR(-20013, 'Poti insera recenzii/actualiza campul spectator_id numai pentru spectatorul 3');
+    ELSIF (INSERTING) THEN
+        INSERT INTO recenzii VALUES(:NEW.recenzie_id, :NEW.piesa_id, :NEW.spectator_id, :NEW.mesaj, :NEW.nota, :NEW.data_recenzie); 
+        COMMIT;
+    ELSE
+        UPDATE recenzii
+        SET piesa_id = :NEW.piesa_id, spectator_id =  :NEW.spectator_id,
+        mesaj = :NEW.mesaj, nota = :NEW.nota, data_recenzie = :NEW.data_recenzie
+        WHERE recenzie_id = :NEW.recenzie_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+--- Vizualizari pentru raspuns_recenzii
+-- actor1
+SELECT * FROM raspuns_recenzii;
+CREATE OR REPLACE VIEW view_raspuns1 AS SELECT * FROM raspuns_recenzii WHERE actor_id = 1;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_raspuns1 TO TEATRU_ACTOR1;
+SELECT * FROM view_raspuns1;
+GRANT SELECT ON raspuns_seq TO TEATRU_ACTOR1;
+
+CREATE OR REPLACE TRIGGER trigger_raspuns1
+INSTEAD OF INSERT OR UPDATE ON view_raspuns1
+FOR EACH ROW 
+BEGIN
+    IF :NEW.actor_id != 1 THEN
+        proc_insert_audit_teatru_erori('Poti insera raspunsul/actualiza campul actor_id numai pentru actor 1');
+        RAISE_APPLICATION_ERROR(-20021, 'Poti insera raspunsul/actualiza campul actor_id numai pentru actor 1');
+    ELSIF (INSERTING) THEN
+        INSERT INTO raspuns_recenzii VALUES(:NEW.raspuns_id, :NEW.recenzie_id, :NEW.actor_id, :NEW.mesaj, :NEW.data_recenzie); 
+        COMMIT;
+    ELSE
+        UPDATE raspuns_recenzii
+        SET recenzie_id = :NEW.recenzie_id, actor_id =  :NEW.actor_id,
+        mesaj = :NEW.mesaj, data_recenzie = :NEW.data_recenzie
+        WHERE raspuns_id = :NEW.raspuns_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+-- actor2
+CREATE OR REPLACE VIEW view_raspuns2 AS SELECT * FROM raspuns_recenzii WHERE actor_id = 2;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_raspuns2 TO TEATRU_ACTOR2;
+SELECT * FROM view_raspuns2;
+GRANT SELECT ON raspuns_seq TO TEATRU_ACTOR2;
+
+CREATE OR REPLACE TRIGGER trigger_raspuns2
+INSTEAD OF INSERT OR UPDATE ON view_raspuns2
+FOR EACH ROW 
+BEGIN
+    IF :NEW.actor_id != 2 THEN
+        proc_insert_audit_teatru_erori('Poti insera raspunsul/actualiza campul actor_id numai pentru actor 2');
+        RAISE_APPLICATION_ERROR(-20022, 'Poti insera raspunsul/actualiza campul actor_id numai pentru actor 2');
+    ELSIF (INSERTING) THEN
+        INSERT INTO raspuns_recenzii VALUES(:NEW.raspuns_id, :NEW.recenzie_id, :NEW.actor_id, :NEW.mesaj, :NEW.data_recenzie); 
+        COMMIT;
+    ELSE
+        UPDATE raspuns_recenzii
+        SET recenzie_id = :NEW.recenzie_id, actor_id =  :NEW.actor_id,
+        mesaj = :NEW.mesaj, data_recenzie = :NEW.data_recenzie
+        WHERE raspuns_id = :NEW.raspuns_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+-- actor3
+CREATE OR REPLACE VIEW view_raspuns3 AS SELECT * FROM raspuns_recenzii WHERE actor_id = 3;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_raspuns3 TO TEATRU_ACTOR3;
+SELECT * FROM view_raspuns3;
+GRANT SELECT ON raspuns_seq TO TEATRU_ACTOR3;
+
+CREATE OR REPLACE TRIGGER trigger_raspuns3
+INSTEAD OF INSERT OR UPDATE ON view_raspuns3
+FOR EACH ROW 
+BEGIN
+    IF :NEW.actor_id != 3 THEN
+        proc_insert_audit_teatru_erori('Poti insera raspunsul/actualiza campul actor_id numai pentru actor 3');
+        RAISE_APPLICATION_ERROR(-20023, 'Poti insera raspunsul/actualiza campul actor_id numai pentru actor 3');
+    ELSIF (INSERTING) THEN
+        INSERT INTO raspuns_recenzii VALUES(:NEW.raspuns_id, :NEW.recenzie_id, :NEW.actor_id, :NEW.mesaj, :NEW.data_recenzie);
+        COMMIT;
+    ELSE
+        UPDATE raspuns_recenzii
+        SET recenzie_id = :NEW.recenzie_id, actor_id =  :NEW.actor_id,
+        mesaj = :NEW.mesaj, data_recenzie = :NEW.data_recenzie
+        WHERE raspuns_id = :NEW.raspuns_id;
+        COMMIT;
+    END IF;
+END;
+/
+
+
+---- spectator 1
+
+SELECT * FROM Teatru_admin.recenzii;
+
+UPDATE teatru_admin.view_recenzii1
+SET piesa_id = 4
+WHERE recenzie_id = 22;
+
+UPDATE teatru_admin.view_recenzii1  -- eroare
+SET spectator_id = 2
+WHERE recenzie_id = 22;
+
+-- actor 1
+SELECT * FROM Teatru_admin.raspuns_recenzii;
+
+INSERT INTO teatru_admin.view_raspuns1 
+VALUES(teatru_admin.raspuns_seq.NEXTVAL, 1, 1, 'Va mai asteptam', sysdate);
+
+
+UPDATE teatru_admin.view_recenzii1
+SET spectator_id = 2
+WHERE recenzie_id = 22;  -- eroare trigger
+
+
+
+-- in teatru admin
+
+-- vizualizare speciala cu datele spectatorului
+SELECT * FROM spectatori;
+CREATE OR REPLACE VIEW view_spectator1 AS SELECT spectator_id, username, prenume, nume
+FROM spectatori WHERE spectator_id = 1;
+
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_spectator1 TO TEATRU_SPECTATOR1;
+SELECT * FROM view_spectator1;
+
+CREATE OR REPLACE TRIGGER trigger_spectator1
+INSTEAD OF UPDATE ON view_spectator1
+FOR EACH ROW 
+BEGIN
+    UPDATE spectatori
+    SET username = :NEW.username,
+    prenume = :NEW.prenume,
+    nume = :NEW.nume
+    WHERE spectator_id = 1;
+    COMMIT;
+END;
+/
+
+-- in spectator1
+
+-- update pe propriile date
+SELECT * FROM teatru_admin.view_spectator1;
+
+UPDATE teatru_admin.view_spectator1
+SET username = 'ipop'
+WHERE spectator_id = 1; --succes
+
+
+
+---- Vizualizare speciala pentru un actor pentru a putea face update pe anumite atribute
+-- Vom face numai pentru un actor pentru a nu repeta informatia
+
+SELECT * FROM actori;
+CREATE OR REPLACE VIEW view_actor1 AS SELECT actor_id, username, prenume, nume, locul_nasterii, data_nasterii, biografie
+FROM actori WHERE actor_id = 1;
+
+GRANT SELECT ON TEATRU_ADMIN.actori TO TEATRU_ACTOR1;
+GRANT SELECT, UPDATE, INSERT, DELETE ON TEATRU_ADMIN.view_actor1 TO TEATRU_ACTOR1;
+SELECT * FROM view_actor1;
+
+CREATE OR REPLACE TRIGGER trigger_actor1
+INSTEAD OF UPDATE ON view_actor1
+FOR EACH ROW 
+BEGIN
+    UPDATE actori
+    SET username = :NEW.username,
+    prenume = :NEW.prenume,
+    nume = :NEW.nume,
+    locul_nasterii = :NEW.locul_nasterii,
+    data_nasterii = :NEW.data_nasterii,
+    biografie = :NEW.biografie
+    WHERE actor_id = 1;
+END;
+/
+
+
+-- update pe propriile date
+-- in actor1
+SELECT * FROM teatru_admin.view_actor1;
+
+SELECT * FROM teatru_admin.actori;
+
+UPDATE teatru_admin.view_actor1
+SET locul_nasterii = 'Ploiesti'
+WHERE actor_id = 1;
+
+
+----- Ierarhii de privilegii
+GRANT SELECT ON teatru_admin.recenzii TO TEATRU_SPECTATOR1;
+GRANT vizualizare_tabele_public TO TEATRU_SPECTATOR1;
+REVOKE SELECT ON teatru_admin.recenzii FROM TEATRU_SPECTATOR1;
+REVOKE vizualizare_tabele_public FROM TEATRU_SPECTATOR1;
+
+-- Privilegii pe obiecte dependente
+
+
+CREATE OR REPLACE VIEW view_detalii_piese AS (SELECT p.piesa_id, titlu, autor, regizor, durata, gen, COUNT(r.reprezentatie_id) nr_reprezentatii, SUM(num_locuri) nr_locuri_vandute FROM piese_teatru p
+LEFT JOIN reprezentatii r ON (r.piesa_id = p.piesa_id)
+JOIN bilete b ON (b.reprezentatie_id = r.reprezentatie_id)
+GROUP BY p.piesa_id, titlu, autor, regizor, durata, gen);
+
+GRANT SELECT ON view_detalii_piese TO TEATRU_GUEST;
+
+-- acum guest poate vedea detaliile de pe bilete desi nu are acces explicit de select pe bilete
+CREATE OR REPLACE VIEW view_detalii_piese AS (SELECT p.piesa_id, titlu, autor, regizor, durata, gen, COUNT(r.reprezentatie_id) nr_reprezentatii, b.spectator_id, b.num_locuri, SUM(num_locuri) nr_locuri_vandute FROM piese_teatru p
+LEFT JOIN reprezentatii r ON (r.piesa_id = p.piesa_id)
+JOIN bilete b ON (b.reprezentatie_id = r.reprezentatie_id)
+GROUP BY p.piesa_id, titlu, autor, regizor, durata, gen, b.spectator_id, b.num_locuri);
+
+GRANT SELECT ON view_detalii_piese TO TEATRU_GUEST;
+
+
+-- in guest
+SELECT * FROM teatru_admin.view_detalii_piese;

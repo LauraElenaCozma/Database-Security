@@ -1,0 +1,218 @@
+------------------------ auditare standard------------------------
+-- sys
+alter session set container=orclpdb;
+show parameter audit_trail;
+show con_name;
+alter system set audit_trail=db,extended scope=spfile;
+alter pluggable database orclpdb open;
+
+select audit_option, success, failure from dba_stmt_audit_opts;
+
+desc v$pdbs;
+select name, open_mode from v$pdbs;
+-- auditam operatiile fara succes facute de consultant
+AUDIT INSERT TABLE BY TEATRU_CONSULTANT1 WHENEVER NOT SUCCESSFUL;
+AUDIT DELETE TABLE BY TEATRU_CONSULTANT1 WHENEVER NOT SUCCESSFUL;
+AUDIT UPDATE TABLE BY TEATRU_CONSULTANT1 WHENEVER NOT SUCCESSFUL;
+AUDIT SELECT TABLE BY TEATRU_CONSULTANT1 WHENEVER NOT SUCCESSFUL;
+
+-- auditam cand se creeaza un view
+AUDIT CREATE ANY VIEW;
+
+
+AUDIT UPDATE TABLE BY TEATRU_ACTOR1;
+AUDIT UPDATE TABLE BY TEATRU_ACTOR2;
+AUDIT UPDATE TABLE BY TEATRU_ACTOR3;
+AUDIT UPDATE TABLE BY TEATRU_ACTOR4;
+AUDIT UPDATE TABLE BY TEATRU_ACTOR5;
+
+AUDIT UPDATE TABLE BY TEATRU_SPECTATOR1;
+AUDIT UPDATE TABLE BY TEATRU_SPECTATOR2;
+AUDIT UPDATE TABLE BY TEATRU_SPECTATOR3;
+AUDIT UPDATE TABLE BY TEATRU_SPECTATOR4;
+AUDIT UPDATE TABLE BY TEATRU_SPECTATOR5;
+
+select obj$name, userid, sqltext, ntimestamp#
+from aud$
+where lower(userid) like '%teatru%'
+order by ntimestamp# desc;
+
+
+----------------- triggeri de auditare-------------------------
+-- IN SYS AS SYSDBA
+
+CREATE TABLE audit_conexiune (
+id_conex NUMBER(6) PRIMARY KEY,
+utilizator VARCHAR2(30),
+sesiune NUMBER(8),
+metoda_auth VARCHAR2(40),
+identitate VARCHAR2(50),
+host_ VARCHAR2(70),
+timp_login DATE,
+timp_logout DATE);
+
+CREATE SEQUENCE audit_conexiune_seq
+START WITH 1
+INCREMENT BY 1;
+
+SET SERVEROUTPUT ON;
+
+CREATE OR REPLACE TRIGGER audit_conexiune_logon
+AFTER LOGON ON DATABASE
+BEGIN
+    IF USER LIKE '%TEATRU%' OR USER LIKE '%LAPTOP%' THEN 
+    INSERT INTO audit_conexiune VALUES (audit_conexiune_seq.nextval, user, sys_context('userenv', 'sessionid'),
+    sys_context('userenv', 'authentication_method'), sys_context('userenv', 'authenticated_identity'),
+    sys_context('userenv', 'host'), sysdate, null);
+    COMMIT;
+    END IF;
+END;
+/
+
+
+CREATE OR REPLACE TRIGGER audit_conexiune_logoff
+BEFORE LOGOFF ON DATABASE
+BEGIN
+    IF USER LIKE '%TEATRU%' OR USER LIKE '%LAPTOP%' THEN 
+    UPDATE audit_conexiune
+    SET timp_logout = sysdate
+    WHERE utilizator = user
+    AND sesiune = sys_context('userenv', 'sessionid');
+    COMMIT;
+    END IF;
+END;
+/
+
+SELECT id_conex, utilizator, sesiune, metoda_auth, identitate, host_, to_char(timp_login, 'dd/mm/yyyy hh24:mi:ss') "login", to_char(timp_logout, 'dd/mm/yyyy hh24:mi:ss') "logout" 
+FROM audit_conexiune
+ORDER BY timp_logout;
+
+
+
+
+
+------ TRIGGER max locuri ---------
+-- in teatru_admin
+/*Trigger de tip LMD la nivel de comanda si trigger de tip LMD la nivel de linie 
+Sa se creeze un trigger care se declanseaza daca se rezerva mai multe locuri intr-o sala decat capacitatea salii*/
+
+SELECT * FROM audit_teatru_erori;
+
+CREATE TABLE audit_teatru_erori(
+    id_ NUMBER(6) PRIMARY KEY,
+    user_ VARCHAR2(40) NOT NULL,
+    data_ DATE DEFAULT SYSDATE,
+    mesaj VARCHAR2(255)
+);
+CREATE SEQUENCE audit_teatru_erori_seq START WITH 1 INCREMENT BY 1;
+
+CREATE OR REPLACE PROCEDURE proc_insert_audit_teatru_erori(msg_eroare VARCHAR2) AS
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    INSERT INTO audit_teatru_erori VALUES(audit_teatru_erori_seq.nextval, SYS_CONTEXT('USERENV','CURRENT_USER') ,SYSDATE, msg_eroare);
+    COMMIT;
+END;
+/
+
+CREATE OR REPLACE PACKAGE pkt_max_locuri
+AS
+TYPE t_idx_cod_event IS TABLE OF reprezentatii.reprezentatie_id%TYPE INDEX BY BINARY_INTEGER;
+TYPE t_idx_cod_client IS TABLE OF spectatori.spectator_id%TYPE INDEX BY BINARY_INTEGER;
+t_cod_event t_idx_cod_event;
+t_cod_client t_idx_cod_client;
+v_nr_elem BINARY_INTEGER := 0;
+END pkt_max_locuri;
+/
+
+-- trigger la nivel de linie
+CREATE OR REPLACE TRIGGER trig_max_locuri_linie
+BEFORE INSERT OR UPDATE OF num_locuri, reprezentatie_id ON bilete
+FOR EACH ROW
+BEGIN
+pkt_max_locuri.v_nr_elem := pkt_max_locuri.v_nr_elem + 1;
+pkt_max_locuri.t_cod_event(pkt_max_locuri.v_nr_elem) := :NEW.reprezentatie_id;
+END;
+/
+-- trigger la nivel de comanda
+CREATE OR REPLACE TRIGGER trig_max_locuri_instr
+AFTER INSERT OR UPDATE OF num_locuri, reprezentatie_id ON bilete
+DECLARE
+v_cod_event reprezentatii.reprezentatie_id%TYPE;
+v_nr_seats NUMBER;
+v_max_seats NUMBER;
+BEGIN
+FOR i IN 1..pkt_max_locuri.v_nr_elem LOOP
+    v_cod_event := pkt_max_locuri.t_cod_event(i);
+    SELECT SUM(num_locuri) INTO v_nr_seats
+    FROM bilete
+    WHERE reprezentatie_id = v_cod_event;
+    
+    SELECT capacitate INTO v_max_seats
+    FROM sali
+    JOIN reprezentatii USING(sala_id)
+    WHERE reprezentatie_id = v_cod_event;
+
+    IF v_nr_seats > v_max_seats THEN
+        proc_insert_audit_teatru_erori('Numarul de scaune rezervate depaseste capacitatea ramasa a salii');
+        RAISE_APPLICATION_ERROR(-20230, 'Numarul de scaune rezervate depaseste capacitatea ramasa a salii');
+    END IF;
+END LOOP;
+
+pkt_max_locuri.v_nr_elem := 0;
+END;
+/
+
+DROP TRIGGER trig_max_locuri_instr;
+DROP TRIGGER trig_max_locuri_linie;
+DROP PACKAGE pkt_max_locuri;
+SELECT * FROM bilete;
+SELECT * FROM reprezentatii;
+SELECT SUM(num_locuri), reprezentatie_id
+FROM bilete
+group by reprezentatie_id;
+
+
+
+------------------- politici de auditare----------------------------
+
+-- in sys
+CREATE OR REPLACE PROCEDURE proc_politica_auditare AS
+BEGIN
+  dbms_fga.add_policy(
+    object_schema => 'TEATRU_ADMIN',
+    object_name => 'REPREZENTATII', 
+    policy_name => 'POLITICA_UPDATE_REPREZENTATII', 
+    audit_condition => 'SYS_CONTEXT(''USERENV'', ''SESSION_USER'') LIKE ''%CONSULTANT%''', 
+    enable => false,
+    statement_types => 'UPDATE',
+    handler_module => 'proc_auditare_reprezentatii');
+END;
+/
+
+CREATE OR REPLACE PROCEDURE proc_auditare_reprezentatii (object_schema varchar2, object_name varchar2, policy_name varchar2) AS
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_user VARCHAR2(30) := SYS_CONTEXT('USERENV','SESSION_USER');
+    v_msg VARCHAR2(255) := 'Politica auditare: utilizatorul ' ||  v_user || ' a facut update la o reprezentatie.';
+BEGIN
+    INSERT INTO teatru_admin.audit_teatru_erori VALUES(teatru_admin.audit_teatru_erori_seq.nextval, v_user ,SYSDATE, v_msg);
+    COMMIT;
+END;
+/
+
+BEGIN
+  dbms_fga.enable_policy(object_schema => 'TEATRU_ADMIN',
+    object_name => 'REPREZENTATII',
+    policy_name => 'POLITICA_UPDATE_REPREZENTATII');
+END;
+/
+
+SELECT object_schema, object_name, policy_name, enabled
+FROM all_audit_policies;
+
+SELECT * FROM  teatru_admin.audit_teatru_erori WHERE user_ LIKE '%CONSULTANT%';
+EXECUTE proc_politica_auditare;
+
+SELECT db_user, userhost, policy_name, to_char(timestamp, 'dd/mm/yyyy hh24:mi:ss') Time, sql_text
+FROM dba_fga_audit_trail
+ORDER BY TIMESTAMP DESC;
+

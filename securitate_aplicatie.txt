@@ -1,0 +1,182 @@
+-- SYS AS SYSDBA
+-- context
+CREATE CONTEXT teatru_ctx USING proc_teatru_ctx;
+
+CREATE OR REPLACE PROCEDURE proc_teatru_ctx IS
+v_ora NUMBER(3);
+BEGIN
+      SELECT TO_NUMBER(TO_CHAR(sysdate, 'hh24')) INTO v_ora 
+      FROM dual;
+      
+      IF v_ora >= 8 AND v_ora <= 23 THEN
+          dbms_session.SET_CONTEXT('teatru_ctx', 'premis_delete', 'nu');
+      ELSE 
+          dbms_session.SET_CONTEXT('teatru_ctx', 'premis_delete', 'da');
+      END IF;
+      
+      IF v_ora >= 12 AND v_ora <= 23 THEN
+          dbms_session.SET_CONTEXT('teatru_ctx', 'premis_update', 'nu');
+      ELSE 
+          dbms_session.SET_CONTEXT('teatru_ctx', 'premis_update', 'da');
+      END IF;
+END;
+/
+
+EXEC proc_teatru_ctx;
+
+CREATE OR REPLACE TRIGGER trigger_after_logon_database
+AFTER LOGON ON DATABASE
+DECLARE
+    v_user varchar2(30);
+BEGIN
+    v_user := SYS_CONTEXT('userenv', 'session_user');
+    
+    IF UPPER(v_user) LIKE '%TEATRU_CONSULTANT%' OR UPPER(v_user) = 'TEATRU_ADMIN' THEN
+        proc_teatru_ctx;
+    END IF;
+END;
+/
+
+
+-- ADMIN
+
+---- CONTEXT
+CREATE OR REPLACE TRIGGER trigger_before_update 
+BEFORE UPDATE ON reprezentatii 
+DECLARE
+v_ora NUMBER(3);
+BEGIN
+    SELECT TO_NUMBER(TO_CHAR(sysdate, 'hh24')) INTO v_ora 
+      FROM dual;
+    IF SYS_CONTEXT('teatru_ctx', 'premis_update') = 'nu' THEN
+        DBMS_OUTPUT.PUT_LINE(v_ora || ' nu este permisa pentru update');
+        RAISE_APPLICATION_ERROR(-20301, 'Nu puteti face update la ora ' || v_ora);
+    END IF;
+END;
+/
+
+CREATE OR REPLACE TRIGGER trigger_before_delete
+BEFORE DELETE ON reprezentatii
+DECLARE
+v_ora NUMBER(3);
+BEGIN
+    SELECT TO_NUMBER(TO_CHAR(sysdate, 'hh24')) INTO v_ora 
+      FROM dual;
+    IF SYS_CONTEXT('teatru_ctx', 'premis_delete') = 'nu' THEN
+        DBMS_OUTPUT.PUT_LINE(v_ora || ' nu este ora permisa pentru delete');
+        RAISE_APPLICATION_ERROR(-20300, 'Nu puteti face delete la ora ' || v_ora);
+    END IF;
+END;
+/
+
+-- CONSULTANT 1
+
+UPDATE teatru_admin.reprezentatii  -- Eroare
+SET status = 'ANULAT'
+WHERE reprezentatie_id = 1;
+
+DELETE FROM teatru_admin.reprezentatii -- Eroare
+WHERE reprezentatie_id = 1;
+
+
+
+
+------------------------
+--  SQL INJECTION
+-- Din teatru_admin
+
+-- Presupunem că un utilizator de tipul SPECTATOR doreste sa isi modifice datele email și parola.
+-- Însă cele două câmpuri sunt criptate, iar în interfață nu vor fi vizibile la început
+-- Pentru a le vedea, un ecran de tip POP-UP va aparea, în care utilizatorul trebuie să își introducă credențialele
+-- Aici atacatorul va introduce date malițioase și va afla și datele decriptate (email și telefon) ale spectatorului
+
+SELECT * FROM spectatori;
+CREATE OR REPLACE PROCEDURE get_email_and_phone(v_username VARCHAR2, v_parola VARCHAR2)
+AS
+v_id NUMBER(5) := -1;
+v_email RAW(100);
+v_phone RAW(100);
+v_decript_email VARCHAR2(100);
+v_decript_phone VARCHAR2(100);
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT spectator_id FROM spectatori WHERE
+    username=''' || v_username || ''' AND parola=hash_parola(''' || v_parola || ''')' INTO v_id;
+    
+    IF v_id != -1 THEN
+        SELECT email
+        INTO v_email
+        FROM spectatori
+        WHERE spectator_id = v_id;
+        
+        SELECT numar_telefon
+        INTO v_phone
+        FROM spectatori
+        WHERE spectator_id = v_id;
+    
+        v_decript_email := decriptare_aes(v_email, v_id, 'spectatori');
+        v_decript_phone := decriptare_aes(v_phone, v_id, 'spectatori');
+
+        DBMS_OUTPUT.PUT_LINE('Email-ul este: ' || v_decript_email || ' iar telefonul este: ' || v_decript_phone);
+    
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('Autentificarea a esuat');
+    END IF;
+    
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('Autentificarea a esuat');
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Eroare');
+END;
+/
+
+
+EXEC get_email_and_phone('dediu', 'dediu');
+EXEC get_email_and_phone('dediu', 'dediuu');
+EXEC get_email_and_phone('dediu''--', 'dediuu');
+
+
+CREATE OR REPLACE PROCEDURE get_email_and_phone_safe(v_username VARCHAR2, v_parola VARCHAR2)
+AS
+v_id NUMBER(5) := -1;
+v_email RAW(100);
+v_phone RAW(100);
+v_decript_email VARCHAR2(100);
+v_decript_phone VARCHAR2(100);
+error_msg VARCHAR2(200);
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT spectator_id FROM spectatori WHERE
+    username=:nume AND parola=hash_parola(:pass)' INTO v_id
+    USING v_username, v_parola;
+    
+    IF v_id != -1 THEN
+        SELECT email
+        INTO v_email
+        FROM spectatori
+        WHERE spectator_id = v_id;
+        
+        SELECT numar_telefon
+        INTO v_phone
+        FROM spectatori
+        WHERE spectator_id = v_id;
+    
+        v_decript_email := decriptare_aes(v_email, v_id, 'spectatori');
+        v_decript_phone := decriptare_aes(v_phone, v_id, 'spectatori');
+
+        DBMS_OUTPUT.PUT_LINE('Email-ul este: ' || v_decript_email || ' iar telefonul este: ' || v_decript_phone);
+    
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('Autentificarea a esuat');
+    END IF;
+    
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('Autentificarea a esuat');
+        WHEN OTHERS THEN
+            error_msg := SUBSTR(SQLERRM,1,100);
+            DBMS_OUTPUT.PUT_LINE(error_msg);
+END;
+/
+
+EXEC get_email_and_phone_safe('dediu', 'dediu');
+EXEC get_email_and_phone_safe('dediu''--', 'dediuu');

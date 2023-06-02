@@ -1,0 +1,239 @@
+---- creare utilizatori
+-- sys 
+SELECT USER FROM DUAL;
+-- verificam ca suntem conectati la sys
+
+SHOW con_name;
+-- verificam ca suntem in baza de date pluggable ORCLPDB
+-- alternativ: ALTER SESSION SET CONTAINER=orclpdb;
+
+-- creare utilizatori cu autentificare externa
+-- verificam ca ne putem autentifica extern
+SHOW con_name;
+ALTER SESSION SET CONTAINER=cdb$root;
+
+
+-- creare utilizatori cu autentificare externa
+SELECT VALUE FROM v$parameter WHERE NAME='os_authent_prefix';
+SHOW PARAMETER os_authent_prefix;
+ALTER SYSTEM SET v=TRUE SCOPE=SPFILE;
+
+
+CREATE USER "OPS$LAPTOP-RQ0TCPJA\COZMA" IDENTIFIED EXTERNALLY;
+GRANT CREATE SESSION TO "OPS$LAPTOP-RQ0TCPJA\COZMA";
+GRANT CONNECT TO "OPS$LAPTOP-RQ0TCPJA\COZMA";
+
+
+SELECT username, authentication_type, expiry_date, created, account_status, default_tablespace, temporary_tablespace FROM dba_users
+WHERE UPPER(username) LIKE '%LAPTOP%' OR  UPPER(username) LIKE '%TEATRU%'
+ORDER BY created DESC;
+
+-- creare utilizatori locali 
+-- cream contul de admin
+CREATE USER teatru_admin IDENTIFIED BY pass_admin PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_admin;
+
+-- cream contul de guest
+CREATE USER teatru_guest IDENTIFIED BY guest;
+GRANT CREATE SESSION TO teatru_guest;
+
+-- cream conturile pentru spectatori
+CREATE USER teatru_spectator1 IDENTIFIED BY pass_spectator1 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator1;
+
+CREATE USER teatru_spectator2 IDENTIFIED BY pass_spectator2 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator2;
+
+CREATE USER teatru_spectator3 IDENTIFIED BY pass_spectator3 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator3;
+
+CREATE USER teatru_spectator4 IDENTIFIED BY pass_spectator4 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator4;
+
+CREATE USER teatru_spectator5 IDENTIFIED BY pass_spectator5 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator5;
+
+CREATE USER teatru_spectator6 IDENTIFIED BY pass_spectator6 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_spectator6;
+
+-- cream conturile pentru actori
+CREATE USER teatru_actor1 IDENTIFIED BY pass_actor1 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_actor1;
+
+CREATE USER teatru_actor2 IDENTIFIED BY pass_actor2 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_actor2;
+
+CREATE USER teatru_actor3 IDENTIFIED BY pass_actor3 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_actor3;
+
+CREATE USER teatru_actor4 IDENTIFIED BY pass_actor4 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_actor4;
+
+CREATE USER teatru_actor5 IDENTIFIED BY pass_actor5 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_actor5;
+
+-- cream conturile pentru consultantii artistici
+CREATE USER teatru_consultant1 IDENTIFIED BY pass_consultant1 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_consultant1;
+
+CREATE USER teatru_consultant2 IDENTIFIED BY pass_consultant2 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_consultant2;
+
+CREATE USER teatru_consultant3 IDENTIFIED BY pass_consultant3 PASSWORD EXPIRE;
+GRANT CREATE SESSION TO teatru_consultant3;
+
+
+-- Seteaza quota pentru a putea adauga date in tabele
+ALTER USER TEATRU_ADMIN QUOTA UNLIMITED ON USERS;
+
+ALTER USER "OPS$LAPTOP-RQ0TCPJA\COZMA" QUOTA 100M ON USERS;
+ALTER USER TEATRU_GUEST QUOTA 0M ON USERS;
+
+ALTER USER TEATRU_CONSULTANT1 QUOTA 10M ON USERS;
+ALTER USER TEATRU_CONSULTANT2 QUOTA 10M ON USERS;
+ALTER USER TEATRU_CONSULTANT3 QUOTA 10M ON USERS;
+
+GRANT CONNECT TO "OPS$LAPTOP-RQ0TCPJA\COZMA";
+ALTER USER TEATRU_ACTOR2 QUOTA 5M ON USERS;
+ALTER USER TEATRU_ACTOR3 QUOTA 5M ON USERS;
+ALTER USER TEATRU_ACTOR4 QUOTA 5M ON USERS;
+ALTER USER TEATRU_ACTOR5 QUOTA 5M ON USERS;
+
+ALTER USER TEATRU_SPECTATOR1 QUOTA 3M ON USERS;
+ALTER USER TEATRU_SPECTATOR2 QUOTA 3M ON USERS;
+ALTER USER TEATRU_SPECTATOR3 QUOTA 3M ON USERS;
+ALTER USER TEATRU_SPECTATOR4 QUOTA 3M ON USERS;
+ALTER USER TEATRU_SPECTATOR5 QUOTA 3M ON USERS;
+ALTER USER TEATRU_SPECTATOR6 QUOTA 3M ON USERS;
+
+
+-- tabel care arata info despre quota
+SELECT * FROM dba_ts_quotas
+WHERE UPPER(username) LIKE '%TEATRU%' OR UPPER(username) LIKE '%LAPTOP%'
+ORDER BY username DESC;
+
+
+
+-- Crearea grupurilor de consum
+
+CREATE OR REPLACE PROCEDURE teatru_plan_consum AS 
+  n NUMBER :=0; 
+BEGIN
+  -- cream o zona de lucru pentru definirea planului
+  DBMS_RESOURCE_MANAGER.CREATE_PENDING_AREA(); 
+  -- cream planul de consum
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN(PLAN => 'teatru_plan_consum',
+                    COMMENT => 'Planul de consum pentru aplicatia de achizitionare de bilete la teatru'); 
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN(PLAN => 'teatru_angajati_plan_consum',
+                    COMMENT => 'Planul de consum pentru angajatii (consultanti artistici sau actori) ai teatrului'); 
+  -- crearea grupurilor de consum  
+  DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP(CONSUMER_GROUP => 'administratie', COMMENT => 'Grupeaza sesiunile administratorilor aplicatiei');     
+  DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP(CONSUMER_GROUP => 'consultanti', COMMENT => 'Grupeaza sesiunile consultantilor artistici'); 
+  DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP(CONSUMER_GROUP => 'actori', COMMENT => 'Grupeaza sesiunile actorilor'); 
+  DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP(CONSUMER_GROUP => 'public', COMMENT => 'Grupeaza sesiunile potentialilor spectatori si ale vizitatorilor aplicatiei'); 
+ 
+  -- crearea grupului de consum pentru utilizatorii din categoria others      
+  SELECT COUNT(*) INTO n 
+  FROM DBA_RSRC_CONSUMER_GROUPS 
+  WHERE CONSUMER_GROUP='OTHER_GROUPS';  
+  
+  IF n=0 THEN   
+    DBMS_RESOURCE_MANAGER.CREATE_CONSUMER_GROUP(CONSUMER_GROUP => 'OTHER_GROUPS', COMMENT => 'Grupeaza restul utilizatorilor');  
+  END IF; 
+ 
+  --mapari statice utilizatori pe grupuri consum, nu pot fi mapati pe grupul OTHER_GROUPS  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ADMIN', 'administratie');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'OPS$LAPTOP-RQ0TCPJA\COZMA', 'administratie'); 
+ 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_CONSULTANT1', 'consultanti');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_CONSULTANT2', 'consultanti'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_CONSULTANT3', 'consultanti'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ACTOR1', 'actori'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ACTOR2', 'actori'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ACTOR3', 'actori'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ACTOR4', 'actori'); 
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_ACTOR5', 'actori'); 
+
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR1', 'public');
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR2', 'public');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR3', 'public');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR4', 'public');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR5', 'public');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_SPECTATOR6', 'public');  
+  DBMS_RESOURCE_MANAGER.SET_CONSUMER_GROUP_MAPPING(DBMS_RESOURCE_MANAGER.ORACLE_USER, 'TEATRU_GUEST', 'public');  
+ 
+  --directivele de plan pentru fiecare grup de consum  
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_plan_consum', GROUP_OR_SUBPLAN => 'administratie', 
+                              COMMENT => 'directiva plan pentru administratie', MGMT_P1 => 20); 
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_plan_consum', GROUP_OR_SUBPLAN => 'teatru_angajati_plan_consum',        
+                              COMMENT => 'directiva plan pentru angajati', MGMT_P1 => 30);    
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_angajati_plan_consum', GROUP_OR_SUBPLAN => 'consultanti',        
+                              COMMENT => 'directiva plan pentru consultanti artistici', MGMT_P1 => 70);  
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_angajati_plan_consum', GROUP_OR_SUBPLAN => 'actori',        
+                              COMMENT => 'directiva plan pentru consultanti artistici', MGMT_P1 => 30);    
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_plan_consum', GROUP_OR_SUBPLAN => 'public',        
+                              COMMENT => 'directiva plan pentru spectatori/guest', MGMT_P1 => 45, MAX_EST_EXEC_TIME => 60, MAX_IDLE_TIME => 600); 
+  DBMS_RESOURCE_MANAGER.CREATE_PLAN_DIRECTIVE(PLAN => 'teatru_plan_consum', GROUP_OR_SUBPLAN => 'OTHER_GROUPS',        
+                              COMMENT => 'directiva plan alti utilizatori', MGMT_P1 => 5); 
+ 
+  DBMS_RESOURCE_MANAGER.VALIDATE_PENDING_AREA();  
+  DBMS_RESOURCE_MANAGER.SUBMIT_PENDING_AREA(); 
+END; 
+/
+
+SELECT * FROM dba_rsrc_consumer_groups where comments like 'Grupeaza%';
+SELECT * FROM dba_rsrc_plans where plan like 'TEATRU%';
+SELECT * FROM dba_rsrc_plan_directives where plan like 'TEATRU%';
+
+
+-- crearea profilurilor de utilizatori
+-- sys
+CREATE PROFILE teatru_guest LIMIT
+   SESSIONS_PER_USER 5
+   FAILED_LOGIN_ATTEMPTS 5;
+
+CREATE PROFILE teatru_spectator LIMIT
+   SESSIONS_PER_USER 5
+   FAILED_LOGIN_ATTEMPTS 5
+   PASSWORD_LIFE_TIME 90
+   PASSWORD_REUSE_TIME 60
+   PASSWORD_REUSE_MAX 5;
+   
+CREATE PROFILE teatru_angajat LIMIT
+   SESSIONS_PER_USER 5
+   FAILED_LOGIN_ATTEMPTS 3
+   PASSWORD_LIFE_TIME 60
+   PASSWORD_REUSE_TIME 60
+   PASSWORD_REUSE_MAX 3;
+
+-- pentru a vedea informatii despre profiluri, accesam tabelul dba_profiles
+SELECT * FROM dba_profiles WHERE UPPER(profile) LIKE '%TEATRU%'
+ORDER BY PROFILE;
+
+-- vedem profilurile asociate utilizatorilor
+SELECT username, profile FROM dba_users WHERE UPPER(username) LIKE '%TEATRU%' OR UPPER(username) LIKE '%LAPTOP%'
+ORDER BY username DESC;
+
+ALTER USER "OPS$LAPTOP-RQ0TCPJA\COZMA" PROFILE teatru_angajat; 
+ALTER USER TEATRU_ACTOR1 PROFILE teatru_angajat; 
+ALTER USER TEATRU_ACTOR2 PROFILE teatru_angajat; 
+ALTER USER TEATRU_ACTOR3 PROFILE teatru_angajat; 
+ALTER USER TEATRU_ACTOR4 PROFILE teatru_angajat; 
+ALTER USER TEATRU_ACTOR5 PROFILE teatru_angajat; 
+ALTER USER TEATRU_ADMIN PROFILE teatru_angajat; 
+ALTER USER TEATRU_CONSULTANT1 PROFILE teatru_angajat; 
+ALTER USER TEATRU_CONSULTANT2 PROFILE teatru_angajat; 
+ALTER USER TEATRU_CONSULTANT3 PROFILE teatru_angajat; 
+
+ALTER USER TEATRU_SPECTATOR1 PROFILE teatru_spectator; 
+ALTER USER TEATRU_SPECTATOR2 PROFILE teatru_spectator; 
+ALTER USER TEATRU_SPECTATOR3 PROFILE teatru_spectator; 
+ALTER USER TEATRU_SPECTATOR4 PROFILE teatru_spectator; 
+ALTER USER TEATRU_SPECTATOR5 PROFILE teatru_spectator; 
+ALTER USER TEATRU_SPECTATOR6 PROFILE teatru_spectator; 
+
+ALTER USER TEATRU_GUEST PROFILE teatru_guest; 
+
+
+
+

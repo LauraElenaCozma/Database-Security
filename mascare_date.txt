@@ -1,0 +1,74 @@
+-- sys
+
+GRANT CREATE ANY DIRECTORY TO TEATRU_ADMIN;
+
+
+-- admin
+
+-- trebuie sa mascam datele din tabelele ACTORI si SPECTATORI
+SELECT * FROM actori;
+SELECT * FROM spectatori;
+SELECT * FROM bilete;
+SELECT * FROM recenzii;
+
+CREATE OR REPLACE PACKAGE pachet_mascare IS
+    FUNCTION f_mascare(sir varchar2) RETURN varchar2; 
+    FUNCTION f_mascare(nr number) RETURN number; 
+END;
+/
+
+CREATE OR REPLACE PACKAGE BODY pachet_mascare IS
+    TYPE tip_tabind IS TABLE OF NUMBER INDEX BY PLS_INTEGER; 
+    v_tabind tip_tabind;
+
+    FUNCTION f_mascare(sir varchar2) RETURN varchar2 
+    IS
+        v_sir varchar2(100);
+        v_lung number; 
+    BEGIN
+        v_sir:=substr(sir,1,1);
+        
+        SELECT length(sir) INTO v_lung
+        FROM dual;
+        v_sir:=rpad(v_sir,v_lung,'*'); --pastreaza prima litera si adauga stelute in locul restului literelor
+        RETURN v_sir; 
+    END f_mascare;
+
+
+    FUNCTION f_mascare(nr number) RETURN number 
+    IS
+        lung number; 
+        minnou number; 
+        maxnou number;
+        l_seed VARCHAR2(100); 
+        v_nrnou number;
+    BEGIN
+    
+    IF v_tabind.EXISTS(nr) THEN
+    RETURN v_tabind(nr); -- pentru cheia externă
+    ELSE -- generam numere de lungimea nr initial + 1, care sa inceapa cu prima cifra
+    lung := LENGTH(to_char(nr)) + 1; 
+    
+    minnou := to_number(rpad(substr(to_char(nr),1,1),lung,'0'));
+    maxnou := to_number(rpad(substr(to_char(nr),1,1),lung,'9'));
+    dbms_output.put_line('minnou='||minnou||' maxnou='||maxnou);
+    l_seed := TO_CHAR(SYSTIMESTAMP,'YYYYDDMMHH24MISSFFFF');
+    DBMS_RANDOM.seed (val => l_seed);
+    v_nrnou := round(DBMS_RANDOM.value(low=>minnou,high=> maxnou),0);
+    v_tabind(nr) := v_nrnou; 
+    RETURN v_nrnou;
+    END IF;
+    END f_mascare;
+
+END;
+/
+
+
+CREATE OR REPLACE DIRECTORY DIREXP AS 'C:\Mascare';
+
+-- expdp teatru_admin/admin1@orclpdb tables=spectatori,bilete,recenzii,actori remap_data=spectatori.username:pachet_mascare.f_mascare remap_data=spectatori.prenume:pachet_mascare.f_mascare remap_data=spectatori.nume:pachet_mascare.f_mascare remap_data=spectatori.spectator_id:pachet_mascare.f_mascare remap_data=bilete.spectator_id:pachet_mascare.f_mascare remap_data=recenzii.spectator_id:pachet_mascare.f_mascare remap_data=actori.username:pachet_mascare.f_mascare directory=DIREXP dumpfile=FISEXPORT.dmp
+-- impdp teatru_admin/admin1@orclpdb directory=DIREXP dumpfile=FISEXPORT.DMP TABLES=spectatori,bilete,recenzii,actori remap_table=spectatori:spectatori_masc1 remap_table=bilete:bilete_masc1 remap_table=recenzii:recenzii_masc1 remap_table=actori:actori_masc1
+SELECT * FROM spectatori_masc1;
+SELECT * FROM bilete_masc1;
+SELECT * FROM recenzii_masc1;
+SELECT * FROM actori_masc1;
